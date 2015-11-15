@@ -1,0 +1,11 @@
+# depslib dependency file v1.0
+1447612149 source:c:\users\hard7\projects\code_blocks_demo\main.cpp
+	<iostream>
+	<fstream>
+	<string>
+	<vector>
+	<cassert>
+	<algorithm>
+	<queue>
+	<climits>
+
