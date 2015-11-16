@@ -7,8 +7,10 @@
 #include <queue>
 #include <climits>
 
-const char PATH_TO_DICT[] = "word_rus.txt";
+const char PATH_TO_DICT[] = "word_rus_2.txt";
 typedef std::vector<std::string> dict_t;
+
+const std::string SOURCE_WORD("муха"), TARGET_WORD("слон");
 
 dict_t file_to_dict(std::string const& path) {
     std::ifstream file(PATH_TO_DICT);
@@ -28,6 +30,14 @@ unsigned words_diff_count(std::string const& rhs, std::string const& lhs) {
     int diff = 0;
     for(unsigned i=0; i<size; i++) {
         diff += int(rhs[i] != lhs[i]);
+        bool flag = false;
+        flag |= (rhs[i] == 'е' and lhs[i] == 'ё');
+        flag |= (rhs[i] == 'ё' and lhs[i] == 'е');
+
+//        flag |= (rhs[i] == 'и' and lhs[i] == 'й');
+//        flag |= (rhs[i] == 'й' and lhs[i] == 'и');
+
+        diff -= (int)flag;
     }
     return diff;
 }
@@ -38,11 +48,15 @@ bool words_has_link(std::string const& rhs, std::string const& lhs) {
 }
 
 struct Node {
+    unsigned index;
+    unsigned cc;
     typedef std::vector<Node> V;
-    std::vector<V::const_iterator> links;
+    std::vector<unsigned> link;
     std::string data;
     operator std::string const&() const { return data; }
     Node(std::string const& s) : data(s) {}
+
+    bool operator==(std::string const& s) const { return data == s; }
 
     static Node::V make_graph(std::vector<std::string> const& dict, unsigned n) {
         Node::V nodes;
@@ -51,15 +65,41 @@ struct Node {
                 nodes.push_back(word);
             }
         }
-        unsigned size = nodes.size();
+        const unsigned size = nodes.size();
         for(unsigned i=0; i<size; i++) {
+            nodes[i].index = i;
             for(unsigned j=i+1; j<size; j++) {
                 if(words_has_link(nodes[i], nodes[j])) {
-                    nodes[i].links.push_back(nodes.cbegin() + j);
-                    nodes[j].links.push_back(nodes.cbegin() + i);
+                    nodes[i].link.push_back(j);
+                    nodes[j].link.push_back(i);
                 }
             }
         }
+
+        unsigned ccnum = 0;
+        std::vector<bool> visited(size, false);
+
+        std::function<void(unsigned id, unsigned cc)> bfs =
+        [&](unsigned id, unsigned cc) {
+            if(not visited[id]) {
+                visited[id] = true;
+                nodes[id].cc = cc;
+                for(unsigned nearest : nodes[id].link) {
+                    bfs(nearest, cc);
+                }
+            }
+        };
+
+        for(unsigned i=0; i<size; i++) {
+            if(not visited[i]) {
+                bfs(i, ccnum);
+                ccnum++;
+            }
+        }
+
+        std::cout << "ccnum: " << ccnum << std::endl;
+        std::cout << "size: " << size << std::endl;
+
         return std::move(nodes);
     }
 };
@@ -70,53 +110,43 @@ int main() {
 
     setlocale(LC_ALL, "Russian");
     auto dict = file_to_dict(PATH_TO_DICT);
-    auto nodes = Node::make_graph(dict, 4);
-    typedef Node::V::const_iterator NodeIterator;
+    std::vector<Node> nodes = Node::make_graph(dict, 4);
     std::vector<bool> visited(nodes.size(), false);
     std::vector<unsigned> prev(nodes.size(), UINT_MAX);
 
-    auto is_fly = [](Node const& n) -> bool { return n.data == "муха"; };
-    auto is_target = [](Node::V::const_iterator it) -> bool { return it->data == "слон"; };
-    NodeIterator fly = std::find_if(nodes.begin(), nodes.end(), is_fly);
-    std::queue<NodeIterator> queue;
-    queue.push(fly);
-    unsigned pos = std::distance(nodes.cbegin(), fly);
-    cout << "pos: " << pos << " "<< nodes.size() << endl;
-    visited[pos] = true;
 
-    unsigned cur_pos, linked_pos;
-    NodeIterator cur, target(nodes.cend());
+    auto source = std::find_if(nodes.begin(), nodes.end(), [](Node const& n) -> bool { return n == SOURCE_WORD; });
+    auto target = std::find_if(nodes.begin(), nodes.end(), [](Node const& n) -> bool { return n == TARGET_WORD; });
+    std::queue<unsigned> queue;
+    queue.push(source->index);
+    visited[source->index] = true;
+
+    unsigned current;
     while(not queue.empty()) {
-        cur = queue.front();
-        cur_pos = std::distance(nodes.cbegin(), cur);
+        current = queue.front();
         queue.pop();
-
-        for(NodeIterator linked_node : cur->links) {
-//            cout << ">> " << linked_node->data << endl;
-            linked_pos = std::distance(nodes.cbegin(), linked_node);
-            prev[linked_pos] = cur_pos;
-//            if(is_target(linked_node)) {
-            if(0) {
-                target = linked_node;
-                cout << "Find " << target->data << endl;
-                break;
-            }
-
-            if(not visited[linked_pos]) {
-                visited[linked_pos] = true;
-                queue.push(linked_node);
+        for(unsigned nearest : nodes[current].link) {
+            if(not visited[nearest]) {
+                queue.push(nearest);
+                visited[nearest] = true;
+                prev[nearest] = current;
             }
         }
     }
-    if(cur != nodes.cend()) {
-            unsigned i = cur_pos;
-            while(i != UINT_MAX) {
-                cout << nodes[i].data << endl;
-                i = prev[i];
-            }
-    }
-    else cout << "Not found" << endl;
 
+    if(not visited[target->index]) {
+        cout << "We have not a path from \"" << SOURCE_WORD << "\" to \"" << TARGET_WORD << "\"." << endl;
+        cout << "This words have different connected component: ";
+        cout << source->cc << " and " << target->cc << endl;
+    }
+    else {
+        cout << "We have a path from \"" << SOURCE_WORD << "\" to \"" << TARGET_WORD << "\"." << endl;
+        current = target->index;
+        while(current != UINT_MAX) {
+            cout << nodes[current].data << endl;
+            current = prev[current];
+        }
+    }
 
     return 0;
 }
